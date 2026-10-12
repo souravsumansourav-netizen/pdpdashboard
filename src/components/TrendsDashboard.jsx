@@ -98,27 +98,7 @@ export const TrendsDashboard = () => {
     fetchData();
   }, []);
 
-  // Fetch material breakdown on-demand for the selected material month
-  useEffect(() => {
-    if (!activeMaterialMonth) return;
-    const fetchMaterial = async () => {
-      try {
-        const { data: matData, error: matErr } = await supabase
-          .from('category_material_metrics')
-          .select('*')
-          .eq('upload_date', activeMaterialMonth);
-        if (!matErr && matData && matData.length > 0) {
-          setMaterialData(matData);
-        } else {
-          setMaterialData([]);
-        }
-      } catch (e) {
-        console.warn('Material breakdown fetch fallback:', e);
-        setMaterialData([]);
-      }
-    };
-    fetchMaterial();
-  }, [activeMaterialMonth]);
+
 
   // Get unique categories for dropdown
   const categories = useMemo(() => {
@@ -179,6 +159,28 @@ export const TrendsDashboard = () => {
   const activeMaterialMonth = materialMonth || (months.length > 0 ? months[0] : '');
   const activeCompareMonthA = compareMonthA || (months.length > 1 ? months[1] : (months.length > 0 ? months[0] : ''));
   const activeCompareMonthB = compareMonthB || (months.length > 0 ? months[0] : '');
+
+  // Fetch material breakdown on-demand for the selected material month
+  useEffect(() => {
+    if (!activeMaterialMonth) return;
+    const fetchMaterial = async () => {
+      try {
+        const { data: matData, error: matErr } = await supabase
+          .from('category_material_metrics')
+          .select('*')
+          .eq('upload_date', activeMaterialMonth);
+        if (!matErr && matData && matData.length > 0) {
+          setMaterialData(matData);
+        } else {
+          setMaterialData([]);
+        }
+      } catch (e) {
+        console.warn('Material breakdown fetch fallback:', e);
+        setMaterialData([]);
+      }
+    };
+    fetchMaterial();
+  }, [activeMaterialMonth]);
 
   const monthlyCategoryData = useMemo(() => {
     if (!activeStartMonth || !activeEndMonth) return [];
