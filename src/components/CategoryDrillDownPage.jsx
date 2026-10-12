@@ -53,36 +53,42 @@ export const CategoryDrillDownPage = () => {
   // Layer 2 visibility state (if clicking a group reveals the whole list, or we just expand inline)
   // For simplicity, we can show a summary at the top, and the tables below are the identity reveals.
   
-  useEffect(() => {
+  const fetchData = async () => {
     if (!category) return;
-    
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data: drilldownData, error: dbError } = await supabase.rpc('get_category_drilldown', {
-          p_category: category,
-          p_platform: platform,
-          p_start_date: startDate,
-          p_end_date: endDate
-        });
-        
-        if (dbError) throw dbError;
-        
-        const enhancedData = (drilldownData || []).map(row => ({
-          ...row,
-          total_intent: row.views > 0 ? (row.cart_adds + row.fis_users) / row.views : 0
-        }));
-        
-        setData(enhancedData);
-      } catch (err) {
-        console.error("Error fetching drilldown data:", err);
-        setError("Failed to load category drill-down data. Make sure you've run the SQL migration in Supabase.");
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: drilldownData, error: dbError } = await supabase.rpc('get_category_drilldown', {
+        p_category: category,
+        p_platform: platform,
+        p_start_date: startDate,
+        p_end_date: endDate
+      });
+      
+      if (dbError) throw dbError;
+      
+      const enhancedData = (drilldownData || []).map(row => ({
+        ...row,
+        total_intent: row.views > 0 ? (row.cart_adds + row.fis_users) / row.views : 0
+      }));
+      
+      setData(enhancedData);
+    } catch (err) {
+      console.error("Error fetching drilldown data:", err);
+      const errMsg = err?.message || '';
+      if (errMsg.includes('timeout') || err?.code === '57014') {
+        setError("Query timed out due to high data volume. Please execute the performance indexes from 'category_drilldown_optimized.sql' in your Supabase SQL Editor.");
+      } else if (errMsg.includes('Could not find the function') || err?.code === 'PGRST202') {
+        setError("Database function 'get_category_drilldown' is missing. Please execute 'category_drilldown_optimized.sql' in your Supabase SQL Editor.");
+      } else {
+        setError(`Failed to load category drill-down data: ${errMsg || "Make sure you've run the SQL migration in Supabase."}`);
       }
-    };
-    
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [category, platform, startDate, endDate]);
 
@@ -179,7 +185,26 @@ export const CategoryDrillDownPage = () => {
           </div>
 
           {loading && <div className="loading-spinner">Loading SKU data...</div>}
-          {error && <div className="error-message">{error}</div>}
+          {error && (
+            <div className="error-message" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+              <span>{error}</span>
+              <button 
+                onClick={fetchData} 
+                style={{ 
+                  padding: '0.4rem 0.9rem', 
+                  background: '#3b82f6', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '4px', 
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           
           {!loading && !error && data.length === 0 && (
             <div className="no-data">No data found for this category and period.</div>

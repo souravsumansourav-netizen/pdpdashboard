@@ -1,3 +1,9 @@
+-- ==============================================================================
+-- CATEGORY DRILL-DOWN PERFORMANCE MIGRATION
+-- Copy and paste this ENTIRE script into your Supabase SQL Editor and click RUN.
+-- Dashboard URL: https://supabase.com/dashboard/project/lekqenxpcsllyfvdklfv/sql
+-- ==============================================================================
+
 -- 1. Helper function for Wilson Lower Bound
 CREATE OR REPLACE FUNCTION wilson_lower_bound(successes NUMERIC, trials NUMERIC)
 RETURNS NUMERIC AS $$
@@ -18,11 +24,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
--- 2. Performance Indexes
+-- 2. Performance Indexes (CRITICAL: Prevents statement timeout on large categories like Earrings)
+-- Composite index on product_metrics for category + platform + date range filtering
+CREATE INDEX IF NOT EXISTS idx_pm_cat_plat_date ON product_metrics(category, platform, upload_date);
 CREATE INDEX IF NOT EXISTS idx_pm_category_date ON product_metrics(category, upload_date);
+
+-- Index on sku_attribute_bridge for fast product_identifier joins
 CREATE INDEX IF NOT EXISTS idx_sab_product_id ON sku_attribute_bridge(product_identifier);
 
--- 3. Optimized RPC using true dynamic SQL (EXECUTE) to guarantee index usage
+-- Index on sku_attribute_master for base_sku lookup
+CREATE INDEX IF NOT EXISTS idx_sam_base_sku ON sku_attribute_master(base_sku);
+
+-- 3. Optimized RPC Function with 30-second statement timeout override
 CREATE OR REPLACE FUNCTION get_category_drilldown(
     p_category TEXT,
     p_platform TEXT,
@@ -42,7 +55,10 @@ RETURNS TABLE (
     opp_score_cart NUMERIC,
     opp_score_fis NUMERIC,
     is_zero_view_anomaly BOOLEAN
-) AS $$
+)
+LANGUAGE plpgsql
+SET statement_timeout = '30s'
+AS $$
 DECLARE
     v_sql TEXT;
 BEGIN
@@ -57,17 +73,13 @@ BEGIN
       FROM product_metrics pm
       WHERE pm.upload_date >= $1 AND pm.upload_date <= $2 ';
 
-    -- 'combined' is actually a pre-aggregated value in product_metrics
-    -- so we should always filter by it to avoid double-counting (app + web + combined)
+    -- platform filter ('combined', 'app', 'web')
     v_sql := v_sql || ' AND pm.platform = $3 ';
 
     IF p_category = 'Uncategorized' THEN
         v_sql := v_sql || ' AND (pm.category = ''N/A'' OR pm.category IS NULL) ';
     ELSIF p_category != 'All' THEN
         v_sql := v_sql || ' AND pm.category = $4 ';
-    ELSE
-        -- All categories
-        v_sql := v_sql || ' AND ($4 = $4) ';
     END IF;
 
     v_sql := v_sql || '
@@ -113,4 +125,5 @@ BEGIN
 
     RETURN QUERY EXECUTE v_sql USING p_start_date, p_end_date, p_platform, p_category;
 END;
-$$ LANGUAGE plpgsql;
+$$;
+
