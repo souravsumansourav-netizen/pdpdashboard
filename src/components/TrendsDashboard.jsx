@@ -35,6 +35,7 @@ const materialColumns = [
 export const TrendsDashboard = () => {
   const [activeTab, setActiveTab] = useState('time'); // 'time' or 'attribute'
   const [data, setData] = useState([]);
+  const [materialData, setMaterialData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -67,7 +68,7 @@ export const TrendsDashboard = () => {
         
         while (hasMore) {
           const { data: metricsData, error: dbError } = await supabase
-            .from('category_material_metrics')
+            .from('category_metrics')
             .select('*')
             .order('upload_date', { ascending: true })
             .range(start, start + PAGE_SIZE - 1);
@@ -96,6 +97,28 @@ export const TrendsDashboard = () => {
     
     fetchData();
   }, []);
+
+  // Fetch material breakdown on-demand for the selected material month
+  useEffect(() => {
+    if (!activeMaterialMonth) return;
+    const fetchMaterial = async () => {
+      try {
+        const { data: matData, error: matErr } = await supabase
+          .from('category_material_metrics')
+          .select('*')
+          .eq('upload_date', activeMaterialMonth);
+        if (!matErr && matData && matData.length > 0) {
+          setMaterialData(matData);
+        } else {
+          setMaterialData([]);
+        }
+      } catch (e) {
+        console.warn('Material breakdown fetch fallback:', e);
+        setMaterialData([]);
+      }
+    };
+    fetchMaterial();
+  }, [activeMaterialMonth]);
 
   // Get unique categories for dropdown
   const categories = useMemo(() => {
@@ -355,7 +378,11 @@ export const TrendsDashboard = () => {
   const monthlyMaterialData = useMemo(() => {
     if (!activeMaterialMonth) return [];
     
-    let filtered = data.filter(d => 
+    const sourceData = (materialData.length > 0 && materialData.some(d => d.upload_date === activeMaterialMonth))
+      ? materialData
+      : data;
+
+    let filtered = sourceData.filter(d => 
       d.upload_date === activeMaterialMonth && 
       d.platform === selectedPlatform
     );
@@ -394,7 +421,7 @@ export const TrendsDashboard = () => {
     }));
     
     return aggregated.sort((a, b) => b.views - a.views);
-  }, [data, activeMaterialMonth, selectedPlatform, materialCategory, excludedCategories]);
+  }, [data, materialData, activeMaterialMonth, selectedPlatform, materialCategory, excludedCategories]);
 
   const monthlyMaterialTotals = useMemo(() => {
     const totals = {

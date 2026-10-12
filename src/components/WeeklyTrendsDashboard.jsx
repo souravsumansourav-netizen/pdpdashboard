@@ -49,15 +49,33 @@ export const WeeklyTrendsDashboard = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const { data: metrics, error: dbError } = await supabase
-          .from('weekly_performance_metrics')
-          .select('*')
-          .order('upload_date', { ascending: true });
+        let allMetrics = [];
+        let hasMore = true;
+        let start = 0;
+        const PAGE_SIZE = 1000;
+
+        while (hasMore) {
+          const { data: metrics, error: dbError } = await supabase
+            .from('weekly_performance_metrics')
+            .select('*')
+            .order('upload_date', { ascending: true })
+            .range(start, start + PAGE_SIZE - 1);
+            
+          if (dbError) throw dbError;
           
-        if (dbError) throw dbError;
+          if (metrics && metrics.length > 0) {
+            allMetrics = [...allMetrics, ...metrics];
+            start += PAGE_SIZE;
+            if (metrics.length < PAGE_SIZE) {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
         
-        if (metrics && metrics.length > 0) {
-          setData(metrics);
+        if (allMetrics.length > 0) {
+          setData(allMetrics);
         } else {
           setData(MOCK_DATA);
         }
